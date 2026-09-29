@@ -10,6 +10,19 @@ from enum import StrEnum
 
 RETURN_WINDOW_DAYS = 30
 REFUND_DAYS = 14  # refund within 14 days of receiving the returned product
+INVOICE_REVIEW_DAYS = 2  # working days for the accounts team to review an invoice
+
+# What the drafting step may tell customers. Built from the constants, so the text
+# and the rules cannot drift apart.
+POLICY_SUMMARY = (
+    f"- Returns: up to {RETURN_WINDOW_DAYS} days after delivery. The refund is made within "
+    f"{REFUND_DAYS} days of receiving the product back.\n"
+    "- Orders not shipped yet can be cancelled instead of returned.\n"
+    "- Orders on their way can be returned once delivered.\n"
+    "- Invoice problems are passed to the accounts team, which reviews them within "
+    f"{INVOICE_REVIEW_DAYS} working days. Support never changes an invoice itself.\n"
+    "- Anything else is passed to a colleague who will answer personally."
+)
 
 
 class OrderStatus(StrEnum):
