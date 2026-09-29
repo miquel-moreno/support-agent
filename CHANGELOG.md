@@ -13,6 +13,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versio
 - `scripts/try_agent.py` to run one email against the synthetic shop.
 - Human approval: the graph pauses before sending (`interrupt` + PostgreSQL checkpointer). API: `POST /emails`, `GET /drafts`, `GET /drafts/{id}`, `POST /drafts/{id}/approve` (optionally edited) and `/reject`. Sending is simulated.
 - Docker loads the demo shop on first start.
+- Traces: every node, LLM call (tokens, model, latency) and tool call of each email, stored in `trace_steps`; `GET /drafts/{id}/trace`.
 
 ### Changed
 - The LLM layer uses LangChain chat models (`ChatOpenAI` for OpenAI and Ollama).
