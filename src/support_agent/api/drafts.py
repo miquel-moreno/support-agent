@@ -3,13 +3,14 @@
 from datetime import UTC, datetime
 from typing import Annotated
 
+import openai
 from fastapi import APIRouter, Depends, status
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from support_agent.adapters.db import DraftStatus, get_draft, get_trace, list_drafts
 from support_agent.api.dependencies import get_agent, get_session
-from support_agent.core.errors import NotFoundError
+from support_agent.core.errors import NotFoundError, ServiceUnavailableError
 from support_agent.services.agent import Agent, ReviewDecision
 from support_agent.services.inbox import IncomingEmail, decide, submit_email
 
@@ -37,6 +38,7 @@ class DraftOut(BaseModel):
     category: str
     situation: str | None
     order_number: str | None
+    return_decision: str | None = Field(description="Return policy decision, if any")
     draft: str
     issues: list[str] = Field(description="Data in the draft that the order does not back")
     final_text: str | None
@@ -64,7 +66,10 @@ class RejectIn(BaseModel):
 @router.post("/emails", status_code=status.HTTP_201_CREATED)
 async def receive_email(email: EmailIn, session: Session, agent: AgentDep) -> DraftOut:
     """The agent drafts a reply and leaves it pending for a person to approve."""
-    record = await submit_email(agent, session, IncomingEmail(**email.model_dump()))
+    try:
+        record = await submit_email(agent, session, IncomingEmail(**email.model_dump()))
+    except openai.OpenAIError as exc:  # network, auth or rate limit: nothing was stored
+        raise ServiceUnavailableError(f"the LLM provider is not available: {exc}") from exc
     return DraftOut.model_validate(record)
 
 

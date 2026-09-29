@@ -3,7 +3,7 @@
 All notable changes to this project are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versions follow [SemVer](https://semver.org/).
 
-## [Unreleased]
+## [1.0.0] - 2026-09-29
 
 ### Added
 - Project scaffold: FastAPI app, health endpoint, JSON logging, CI, Docker.
@@ -15,6 +15,9 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versio
 - Docker loads the demo shop on first start.
 - Traces: every node, LLM call (tokens, model, latency) and tool call of each email, stored in `trace_steps`; `GET /drafts/{id}/trace`.
 - Evaluation with 40 synthetic emails: code checks, an LLM judge and a manual review sample; results in `evals/results/`.
+- Demo page at `/` (the README GIF) and `scripts/record_demo.py`.
+- Drafts store the return policy decision.
+- An unreachable LLM provider returns 503 with a clear message, and nothing is stored.
 
 ### Fixed
 - Drafts no longer make claims about products, stock, prices or hours, and offer cancellations instead of announcing them (found in the manual review).

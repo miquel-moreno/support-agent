@@ -4,7 +4,7 @@
 
 Para tiendas y talleres que reciben cada día correos como "¿dónde está mi pedido?" o "quiero devolverlo" y los contestan uno a uno.
 
-> 🚧 **En desarrollo.** Primera versión prevista para octubre de 2026.
+![Demo: llega un email, la IA redacta la respuesta y una persona la aprueba](docs/images/demo.gif)
 
 ## Qué hace
 - Entiende qué pide el cliente: estado del pedido, devolución, problema con la factura u otra consulta

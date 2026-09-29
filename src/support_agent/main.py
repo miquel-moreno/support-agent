@@ -10,7 +10,7 @@ from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 
 from support_agent import __version__
 from support_agent.adapters.db import make_engine, make_session_factory
-from support_agent.api import drafts, health
+from support_agent.api import demo, drafts, health
 from support_agent.api.middleware import request_id_middleware
 from support_agent.core.config import get_settings
 from support_agent.core.errors import register_error_handlers
@@ -48,6 +48,7 @@ def create_app() -> FastAPI:
     register_error_handlers(app)
     app.include_router(health.router)
     app.include_router(drafts.router)
+    app.include_router(demo.router)
     return app
 
 

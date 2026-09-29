@@ -10,6 +10,7 @@ from langchain_core.messages import AIMessage
 from scripts import seed_shop
 
 from support_agent.adapters.llm import ScriptedChatModel
+from support_agent.api.demo import examples
 from support_agent.api.dependencies import get_chat_model
 from support_agent.main import create_app
 from support_agent.services.agent import Category, EmailClassification
@@ -60,6 +61,7 @@ def test_an_email_becomes_a_pending_draft(api: Any) -> None:
     assert draft["status"] == "pending"
     assert (draft["category"], draft["situation"]) == ("order_status", "order_found")
     assert (draft["order_number"], draft["draft"], draft["issues"]) == (ORDER.number, DRAFT, [])
+    assert draft["return_decision"] is None  # only returns go through the return policy
     assert draft["final_text"] is None
     pending = client.get("/drafts", params={"status": "pending"}).json()
     assert [d["id"] for d in pending] == [draft["id"]]
@@ -156,3 +158,28 @@ def test_the_trace_explains_the_draft_and_the_decision(api: Any) -> None:
 def test_trace_of_an_unknown_draft_is_404(api: Any) -> None:
     client, _ = api
     assert client.get("/drafts/nope/trace").status_code == 404
+
+
+def test_the_demo_page_offers_emails_from_real_shop_customers(client: TestClient) -> None:
+    page = client.get("/")
+
+    assert page.status_code == 200
+    assert "Aprobar y enviar" in page.text and "__EXAMPLES__" not in page.text
+    for example in examples():
+        assert example["sender"] in page.text
+        assert example["sender"].split("@")[1].startswith("example.")  # invented addresses
+
+
+def test_an_unreachable_llm_is_a_clear_503(api: Any) -> None:
+    import httpx
+    import openai
+
+    client, model = api
+    request = httpx.Request("POST", "https://llm.example/v1/chat/completions")
+    model.replies.append(openai.APIConnectionError(request=request))
+
+    response = client.post("/emails", json={"sender": SENDER, "body": "hola"})
+
+    assert response.status_code == 503
+    assert "not available" in response.json()["error"]["message"]
+    assert client.get("/drafts").json() == []  # nothing half-stored

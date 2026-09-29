@@ -7,7 +7,13 @@ cp .env.example .env   # elige proveedor de LLM y añade tu clave
 docker compose up --build
 ```
 
-La API queda en http://localhost:8000 (documentación interactiva en `/docs`).
+La primera vez aplica las migraciones y carga la tienda de prueba. La demo queda en http://localhost:8000 y la documentación interactiva de la API en `/docs`. Comprobado desde cero (`docker compose down -v` y `up --build`) el 29/09/2026.
+
+El GIF del README se graba con la demo en marcha y un LLM real (tres emails, menos de 1 céntimo):
+
+```bash
+uv run python -m scripts.record_demo
+```
 
 Desarrollo local:
 

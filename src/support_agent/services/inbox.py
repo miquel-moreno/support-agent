@@ -60,6 +60,7 @@ async def submit_email(agent: Agent, session: AsyncSession, email: IncomingEmail
         category=str(state["category"]),
         situation=str(state["situation"]) if state.get("situation") else None,
         order_number=order.get("number"),
+        return_decision=(state.get("policy") or {}).get("decision"),
         draft=state["draft"],
         issues=state["issues"],
     )
