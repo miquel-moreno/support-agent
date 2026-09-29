@@ -165,3 +165,15 @@ def test_review_sheet_samples_ten_drafts() -> None:
 
     assert sheet.count("## case-") == 10
     assert "> Adiós." in sheet and "**Yo:** ___" in sheet
+
+
+def test_result_files_get_a_safe_name() -> None:
+    from evals.run import result_stem
+
+    assert result_stem("2026-09-29", "gpt-4.1-mini", tag=None, limit=None) == (
+        "2026-09-29_gpt-4.1-mini"
+    )
+    assert result_stem("2026-09-29", "qwen2.5:3b", tag="v2", limit=3) == (
+        "2026-09-29_qwen2.5-3b_v2_limit3"
+    )
+    assert "/" not in result_stem("d", "openai/gpt", tag="a/b", limit=None)

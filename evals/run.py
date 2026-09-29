@@ -14,6 +14,7 @@ evals/results/<date>_<model>_review.md.
 
 uv run python -m evals.run              # all 40
 uv run python -m evals.run --limit 3    # a quick smoke run
+uv run python -m evals.run --tag v2     # results saved as <date>_<model>_v2.json
 """
 
 import argparse
@@ -97,6 +98,9 @@ Decide whether a careful supervisor would send the draft exactly as it is.
 It is ready to send only if ALL of these hold:
 - it answers what the customer asked, or asks for exactly what is missing;
 - every fact it states (orders, dates, amounts, statuses, deadlines) is in the facts given;
+  the assistant has no product catalogue, stock, prices or opening hours, so any claim
+  about them (e.g. "yes, we sell X") is invented and the draft is not ready to send;
+- it does not say an action is done (cancelled, refunded) when it only can be offered;
 - it follows the return policy decision and promises nothing beyond it;
 - it reveals nothing about orders that are not the customer's;
 - it is clear, polite, coherent Spanish, with no contradictions.
@@ -200,7 +204,13 @@ def review_sheet(results: list[dict[str, Any]], title: str) -> str:
     return "\n".join(lines)
 
 
-async def run(limit: int | None = None) -> dict[str, Any]:
+def result_stem(day: str, model: str, *, tag: str | None, limit: int | None) -> str:
+    """File name without extension: <date>_<model>[_<tag>][_limit<N>], safe on any OS."""
+    stem = f"{day}_{model}" + (f"_{tag}" if tag else "") + (f"_limit{limit}" if limit else "")
+    return "".join(c if c.isalnum() or c in "._-" else "-" for c in stem)
+
+
+async def run(limit: int | None = None, tag: str | None = None) -> dict[str, Any]:
     settings = get_settings()
     model = build_chat_model(settings)
     shop = generate_shop()
@@ -259,9 +269,7 @@ async def run(limit: int | None = None) -> dict[str, Any]:
         "cases": results,
     }
     RESULTS.mkdir(exist_ok=True)
-    stem = f"{report['date']}_{settings.llm_model.replace(':', '-')}" + (
-        f"_limit{limit}" if limit else ""
-    )
+    stem = result_stem(report["date"], settings.llm_model, tag=tag, limit=limit)
     (RESULTS / f"{stem}.json").write_text(
         json.dumps(report, ensure_ascii=False, indent=1) + "\n", encoding="utf-8", newline="\n"
     )
@@ -277,7 +285,9 @@ async def run(limit: int | None = None) -> dict[str, Any]:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0] if __doc__ else None)
     parser.add_argument("--limit", type=int, help="only the first N emails")
-    asyncio.run(run(parser.parse_args().limit))
+    parser.add_argument("--tag", help="suffix for the result files, e.g. v2")
+    args = parser.parse_args()
+    asyncio.run(run(args.limit, args.tag))
 
 
 if __name__ == "__main__":
