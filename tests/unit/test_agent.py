@@ -7,6 +7,9 @@ from typing import Any
 
 import pytest
 from langchain_core.messages import AIMessage, ToolMessage
+from langchain_core.runnables import RunnableConfig
+from langgraph.checkpoint.memory import InMemorySaver
+from langgraph.types import Command
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
 
@@ -26,6 +29,7 @@ from support_agent.services.shop_data import REFERENCE_DATE, Order, generate_sho
 
 SHOP = generate_shop()
 ORDERS_PER_CUSTOMER = Counter(o.customer_id for o in SHOP.orders)
+THREAD: RunnableConfig = {"configurable": {"thread_id": "test"}}
 
 
 def email_of(order: Order) -> str:
@@ -68,10 +72,12 @@ def call(tool: str, n: int = 1, **args: Any) -> AIMessage:
 async def run(
     sessions: async_sessionmaker[AsyncSession], replies: list[Any], sender: str, body: str
 ) -> tuple[AgentState, ScriptedChatModel]:
+    """Run until the graph pauses for approval (the state it pauses with)."""
     model = ScriptedChatModel(replies=replies)
-    agent = build_agent(model, sessions)
-    state = await agent.ainvoke({"sender": sender, "subject": "Consulta", "body": body})
+    agent = build_agent(model, sessions, checkpointer=InMemorySaver())
+    state = await agent.ainvoke({"sender": sender, "subject": "Consulta", "body": body}, THREAD)
     assert not model.replies, "the graph did not use every scripted reply"
+    assert "__interrupt__" in state, "the graph must pause for a person before sending"
     return state, model
 
 
@@ -303,3 +309,55 @@ async def test_the_lookup_loop_is_capped(sessions: Any) -> None:
 
     tool_replies = [m for m in state["messages"] if isinstance(m, ToolMessage)]
     assert len(tool_replies) == MAX_LOOKUP_ROUNDS
+
+
+# --- Human approval -----------------------------------------------------------------
+
+
+async def paused_agent(sessions: Any, draft: str) -> Any:
+    order = SHOP.orders[0]
+    model = ScriptedChatModel(
+        replies=[
+            classify(Category.ORDER_STATUS),
+            call("find_order", order_number=order.number),
+            AIMessage("done"),
+            AIMessage(draft),
+        ]
+    )
+    agent = build_agent(model, sessions, checkpointer=InMemorySaver())
+    paused = await agent.ainvoke(
+        {"sender": email_of(order), "subject": "", "body": f"¿Y mi {order.number}?"}, THREAD
+    )
+    assert paused["__interrupt__"][0].value == {"draft": draft, "issues": []}
+    assert "final_text" not in paused  # nothing is sent before a person decides
+    return agent
+
+
+async def test_approving_sends_the_draft_as_is(sessions: Any) -> None:
+    agent = await paused_agent(sessions, "Hola, tu pedido va en camino.")
+
+    done = await agent.ainvoke(
+        Command(resume={"action": "approve", "text": None, "reason": None}), THREAD
+    )
+
+    assert (done["outcome"], done["final_text"]) == ("sent", "Hola, tu pedido va en camino.")
+
+
+async def test_an_edited_reply_replaces_the_draft(sessions: Any) -> None:
+    agent = await paused_agent(sessions, "Hola.")
+
+    done = await agent.ainvoke(
+        Command(resume={"action": "approve", "text": "Hola, ya sale.", "reason": None}), THREAD
+    )
+
+    assert done["final_text"] == "Hola, ya sale."
+
+
+async def test_rejecting_sends_nothing(sessions: Any) -> None:
+    agent = await paused_agent(sessions, "Hola.")
+
+    done = await agent.ainvoke(
+        Command(resume={"action": "reject", "text": None, "reason": "tono"}), THREAD
+    )
+
+    assert done["outcome"] == "rejected" and "final_text" not in done
