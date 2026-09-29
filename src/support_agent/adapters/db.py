@@ -6,17 +6,21 @@ portable column types so both work. Every model change needs an Alembic migratio
 """
 
 from collections.abc import Sequence
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
+from enum import StrEnum
 from typing import Any
 
 from sqlalchemy import (
     JSON,
+    Boolean,
     Date,
+    DateTime,
     ForeignKey,
     Integer,
     Numeric,
     String,
+    Text,
     delete,
     func,
     select,
@@ -115,3 +119,47 @@ async def find_orders_by_email(session: AsyncSession, email: str) -> Sequence[Or
 
 async def get_customer(session: AsyncSession, customer_id: int) -> CustomerRecord | None:
     return await session.get(CustomerRecord, customer_id)
+
+
+# --- Drafts: the human review queue -----------------------------------------------
+
+
+class DraftStatus(StrEnum):
+    PENDING = "pending"  # waiting for a person
+    SENT = "sent"  # approved; sending is simulated
+    REJECTED = "rejected"
+
+
+class DraftRecord(Base):
+    """One incoming email and its reply. `id` is also the LangGraph thread id."""
+
+    __tablename__ = "drafts"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    status: Mapped[str] = mapped_column(String(20), index=True)
+    sender: Mapped[str] = mapped_column(String(200))
+    subject: Mapped[str] = mapped_column(String(300))
+    body: Mapped[str] = mapped_column(Text)
+    category: Mapped[str] = mapped_column(String(30))
+    situation: Mapped[str | None] = mapped_column(String(30))
+    order_number: Mapped[str | None] = mapped_column(String(20))
+    draft: Mapped[str] = mapped_column(Text)
+    issues: Mapped[list[str]] = mapped_column(JSON)
+    final_text: Mapped[str | None] = mapped_column(Text)
+    edited: Mapped[bool | None] = mapped_column(Boolean)  # approved with changes?
+    reject_reason: Mapped[str | None] = mapped_column(Text)
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+async def get_draft(session: AsyncSession, draft_id: str) -> DraftRecord | None:
+    return await session.get(DraftRecord, draft_id)
+
+
+async def list_drafts(
+    session: AsyncSession, status: DraftStatus | None = None
+) -> Sequence[DraftRecord]:
+    query = select(DraftRecord).order_by(DraftRecord.created_at.desc())
+    if status is not None:
+        query = query.where(DraftRecord.status == status.value)
+    return (await session.execute(query)).scalars().all()

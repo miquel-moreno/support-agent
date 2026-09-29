@@ -1,6 +1,7 @@
 """The support agent as a LangGraph state graph.
 
-    classify -> lookup <-> tools -> resolve -> policy -> draft -> review -> (draft | end)
+    classify -> lookup <-> tools -> resolve -> policy -> draft -> review -> (draft | approval)
+    approval (pause until a person decides) -> send | end
 
 The model does three things: label the email, decide which lookups to make (tool
 calling) and write the reply. Everything with consequences is code: which order the
@@ -15,10 +16,11 @@ from typing import Annotated, Any, Literal, TypedDict
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage, AnyMessage, HumanMessage, SystemMessage, ToolMessage
 from langgraph.checkpoint.base import BaseCheckpointSaver
-from langgraph.graph import START, StateGraph
+from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.prebuilt import ToolNode
+from langgraph.types import interrupt
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -69,6 +71,17 @@ class AgentState(TypedDict, total=False):
     draft: str
     drafts: int
     issues: list[str]
+    decision: "ReviewDecision"
+    outcome: Literal["sent", "rejected"]
+    final_text: str
+
+
+class ReviewDecision(TypedDict):
+    """What the person reviewing the draft decided (sent to resume the graph)."""
+
+    action: Literal["approve", "reject"]
+    text: str | None  # approve: the reply to send, if the person edited the draft
+    reason: str | None  # reject: why
 
 
 CLASSIFY_PROMPT = """You sort customer emails for a car parts shop.
@@ -116,13 +129,16 @@ def _lookup_results(messages: list[AnyMessage]) -> tuple[list[OrderFacts], list[
     return list(by_number.values()), list(by_email.values()), hidden
 
 
+type Agent = CompiledStateGraph[AgentState, None, AgentState, AgentState]
+
+
 def build_agent(
     model: BaseChatModel,
     sessions: async_sessionmaker[AsyncSession],
     *,
     today: date = REFERENCE_DATE,
     checkpointer: BaseCheckpointSaver[Any] | None = None,
-) -> CompiledStateGraph[AgentState, None, AgentState, AgentState]:
+) -> Agent:
     tools = make_order_tools(sessions)
     lookup_model = model.bind_tools(tools)
     classifier = model.with_structured_output(EmailClassification)
@@ -207,6 +223,18 @@ def build_agent(
         extra = [today] + ([deadline] if deadline else [])
         return {"issues": check_draft(state["draft"], orders, extra_dates=extra)}
 
+    def approval(state: AgentState) -> AgentState:
+        # Pauses the run here until resumed with Command(resume=ReviewDecision). On resume
+        # this node runs again from the top, so it must not have side effects.
+        decision: ReviewDecision = interrupt({"draft": state["draft"], "issues": state["issues"]})
+        if decision["action"] == "reject":
+            return {"decision": decision, "outcome": "rejected"}
+        return {"decision": decision}
+
+    def send(state: AgentState) -> AgentState:
+        # Sending is simulated: the approved text is the result of the run.
+        return {"final_text": state["decision"]["text"] or state["draft"], "outcome": "sent"}
+
     def after_classify(state: AgentState) -> Literal["lookup", "draft"]:
         return "draft" if state["category"] == Category.OTHER else "lookup"
 
@@ -218,8 +246,11 @@ def build_agent(
             return "tools"
         return "resolve"
 
-    def after_review(state: AgentState) -> Literal["draft", "__end__"]:
-        return "draft" if state["issues"] and state["drafts"] < MAX_DRAFTS else "__end__"
+    def after_review(state: AgentState) -> Literal["draft", "approval"]:
+        return "draft" if state["issues"] and state["drafts"] < MAX_DRAFTS else "approval"
+
+    def after_approval(state: AgentState) -> Literal["send", "__end__"]:
+        return "__end__" if state.get("outcome") == "rejected" else "send"
 
     graph = StateGraph(AgentState)
     graph.add_node("classify", classify)
@@ -229,6 +260,8 @@ def build_agent(
     graph.add_node("policy", policy)
     graph.add_node("draft", draft)
     graph.add_node("review", review)
+    graph.add_node("approval", approval)
+    graph.add_node("send", send)
     graph.add_edge(START, "classify")
     graph.add_conditional_edges("classify", after_classify)
     graph.add_conditional_edges("lookup", after_lookup)
@@ -237,4 +270,6 @@ def build_agent(
     graph.add_edge("policy", "draft")
     graph.add_edge("draft", "review")
     graph.add_conditional_edges("review", after_review)
+    graph.add_conditional_edges("approval", after_approval)
+    graph.add_edge("send", END)
     return graph.compile(checkpointer=checkpointer)

@@ -11,6 +11,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versio
 - Synthetic shop (Faker, fixed seed): customers and orders tables, lookups and seed script.
 - LangGraph agent: classify, look up the order with tool calling, apply the return policy, draft the reply and review it for invented data.
 - `scripts/try_agent.py` to run one email against the synthetic shop.
+- Human approval: the graph pauses before sending (`interrupt` + PostgreSQL checkpointer). API: `POST /emails`, `GET /drafts`, `GET /drafts/{id}`, `POST /drafts/{id}/approve` (optionally edited) and `/reject`. Sending is simulated.
+- Docker loads the demo shop on first start.
 
 ### Changed
 - The LLM layer uses LangChain chat models (`ChatOpenAI` for OpenAI and Ollama).
