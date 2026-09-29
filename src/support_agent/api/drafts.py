@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, status
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from support_agent.adapters.db import DraftStatus, get_draft, list_drafts
+from support_agent.adapters.db import DraftStatus, get_draft, get_trace, list_drafts
 from support_agent.api.dependencies import get_agent, get_session
 from support_agent.core.errors import NotFoundError
 from support_agent.services.agent import Agent, ReviewDecision
@@ -95,3 +95,50 @@ async def approve(
 async def reject(draft_id: str, body: RejectIn, session: Session, agent: AgentDep) -> DraftOut:
     decision = ReviewDecision(action="reject", text=None, reason=body.reason)
     return DraftOut.model_validate(await decide(agent, session, draft_id, decision))
+
+
+class TraceStepOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    seq: int
+    node: str
+    kind: str = Field(description="node, llm or tool")
+    name: str
+    input: str | None
+    output: str | None
+    model: str | None
+    input_tokens: int | None
+    output_tokens: int | None
+    latency_ms: float | None
+    error: str | None
+
+
+class TraceTotals(BaseModel):
+    llm_calls: int
+    tool_calls: int
+    input_tokens: int
+    output_tokens: int
+    seconds: float = Field(description="Time spent in graph nodes (the person's wait excluded)")
+
+
+class TraceOut(BaseModel):
+    draft_id: str
+    totals: TraceTotals
+    steps: list[TraceStepOut]
+
+
+@router.get("/drafts/{draft_id}/trace")
+async def trace(draft_id: str, session: Session) -> TraceOut:
+    """Why the agent did what it did: every node, LLM call and tool call, in order."""
+    if await get_draft(session, draft_id) is None:
+        raise NotFoundError(f"draft {draft_id} not found")
+    steps = [TraceStepOut.model_validate(s) for s in await get_trace(session, draft_id)]
+    llm = [s for s in steps if s.kind == "llm"]
+    totals = TraceTotals(
+        llm_calls=len(llm),
+        tool_calls=sum(s.kind == "tool" for s in steps),
+        input_tokens=sum(s.input_tokens or 0 for s in llm),
+        output_tokens=sum(s.output_tokens or 0 for s in llm),
+        seconds=round(sum(s.latency_ms or 0 for s in steps if s.kind == "node") / 1000, 2),
+    )
+    return TraceOut(draft_id=draft_id, totals=totals, steps=steps)

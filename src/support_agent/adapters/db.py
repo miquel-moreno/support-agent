@@ -16,6 +16,7 @@ from sqlalchemy import (
     Boolean,
     Date,
     DateTime,
+    Float,
     ForeignKey,
     Integer,
     Numeric,
@@ -162,4 +163,39 @@ async def list_drafts(
     query = select(DraftRecord).order_by(DraftRecord.created_at.desc())
     if status is not None:
         query = query.where(DraftRecord.status == status.value)
+    return (await session.execute(query)).scalars().all()
+
+
+# --- Traces: what the agent did, step by step --------------------------------------
+
+
+class TraceStepRecord(Base):
+    __tablename__ = "trace_steps"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    draft_id: Mapped[str] = mapped_column(ForeignKey("drafts.id"), index=True)
+    seq: Mapped[int] = mapped_column(Integer)
+    node: Mapped[str] = mapped_column(String(50))
+    kind: Mapped[str] = mapped_column(String(10))  # node, llm or tool
+    name: Mapped[str] = mapped_column(String(100))
+    input: Mapped[str | None] = mapped_column(Text)
+    output: Mapped[str | None] = mapped_column(Text)
+    model: Mapped[str | None] = mapped_column(String(100))
+    input_tokens: Mapped[int | None] = mapped_column(Integer)
+    output_tokens: Mapped[int | None] = mapped_column(Integer)
+    latency_ms: Mapped[float | None] = mapped_column(Float)
+    error: Mapped[str | None] = mapped_column(Text)
+
+
+async def count_trace_steps(session: AsyncSession, draft_id: str) -> int:
+    query = select(func.count()).where(TraceStepRecord.draft_id == draft_id)
+    return int(await session.scalar(query) or 0)
+
+
+async def get_trace(session: AsyncSession, draft_id: str) -> Sequence[TraceStepRecord]:
+    query = (
+        select(TraceStepRecord)
+        .where(TraceStepRecord.draft_id == draft_id)
+        .order_by(TraceStepRecord.seq)
+    )
     return (await session.execute(query)).scalars().all()

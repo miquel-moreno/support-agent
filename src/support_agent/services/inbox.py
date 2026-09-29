@@ -2,7 +2,8 @@
 approves (optionally editing it) or rejects it, and the agent resumes.
 
 The draft id is the LangGraph thread id, so the checkpointer can resume exactly that
-run, even after a restart. The drafts table is what people see and query.
+run, even after a restart. The drafts table is what people see and query, and every
+run leaves its trace (see services/tracing.py).
 """
 
 from dataclasses import dataclass
@@ -13,9 +14,16 @@ from langchain_core.runnables import RunnableConfig
 from langgraph.types import Command
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from support_agent.adapters.db import DraftRecord, DraftStatus, get_draft
+from support_agent.adapters.db import (
+    DraftRecord,
+    DraftStatus,
+    TraceStepRecord,
+    count_trace_steps,
+    get_draft,
+)
 from support_agent.core.errors import ConflictError, NotFoundError
 from support_agent.services.agent import Agent, ReviewDecision
+from support_agent.services.tracing import TraceRecorder, TraceStep
 
 
 @dataclass(frozen=True)
@@ -25,16 +33,21 @@ class IncomingEmail:
     body: str
 
 
-def _config(draft_id: str) -> RunnableConfig:
-    return {"configurable": {"thread_id": draft_id}}
+def _config(draft_id: str, recorder: TraceRecorder) -> RunnableConfig:
+    return {"configurable": {"thread_id": draft_id}, "callbacks": [recorder]}
+
+
+def _store_trace(session: AsyncSession, draft_id: str, steps: list[TraceStep]) -> None:
+    session.add_all(TraceStepRecord(draft_id=draft_id, **vars(step)) for step in steps)
 
 
 async def submit_email(agent: Agent, session: AsyncSession, email: IncomingEmail) -> DraftRecord:
     """Run the agent until it pauses for approval and store the draft as pending."""
     draft_id = str(uuid4())
+    recorder = TraceRecorder()
     state = await agent.ainvoke(
         {"sender": email.sender, "subject": email.subject, "body": email.body},
-        _config(draft_id),
+        _config(draft_id, recorder),
     )
     order = state.get("order") or {}
     record = DraftRecord(
@@ -51,6 +64,8 @@ async def submit_email(agent: Agent, session: AsyncSession, email: IncomingEmail
         issues=state["issues"],
     )
     session.add(record)
+    await session.flush()  # the draft row must exist before its trace steps
+    _store_trace(session, draft_id, recorder.steps)
     await session.commit()
     return record
 
@@ -65,7 +80,8 @@ async def decide(
     if record.status != DraftStatus.PENDING:
         raise ConflictError(f"draft {draft_id} is already {record.status}")
 
-    state = await agent.ainvoke(Command(resume=decision), _config(draft_id))
+    recorder = TraceRecorder(first_seq=await count_trace_steps(session, draft_id) + 1)
+    state = await agent.ainvoke(Command(resume=decision), _config(draft_id, recorder))
     record.decided_at = datetime.now(UTC)
     if state.get("outcome") == "sent":
         record.status = DraftStatus.SENT.value
@@ -74,5 +90,6 @@ async def decide(
     else:
         record.status = DraftStatus.REJECTED.value
         record.reject_reason = decision["reason"]
+    _store_trace(session, draft_id, recorder.steps)
     await session.commit()
     return record
