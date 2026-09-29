@@ -74,7 +74,7 @@
     </div>
     <p class="issues hidden" id="issues"></p>
     <label for="draft">Respuesta (puedes corregirla antes de aprobar)</label>
-    <textarea id="draft" rows="8"></textarea>
+    <textarea id="draft" rows="11"></textarea>
     <div class="actions" id="decide">
       <button class="btn approve" id="approve">Aprobar y enviar</button>
       <button class="btn reject" id="reject">Rechazar</button>
@@ -142,7 +142,7 @@ async function call(url, body) {
     headers: { "Content-Type": "application/json" },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
-  const data = await response.json();
+  const data = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error((data.error && data.error.message) || "Error " + response.status);
   return data;
 }

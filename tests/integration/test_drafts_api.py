@@ -168,3 +168,18 @@ def test_the_demo_page_offers_emails_from_real_shop_customers(client: TestClient
     for example in examples():
         assert example["sender"] in page.text
         assert example["sender"].split("@")[1].startswith("example.")  # invented addresses
+
+
+def test_an_unreachable_llm_is_a_clear_503(api: Any) -> None:
+    import httpx
+    import openai
+
+    client, model = api
+    request = httpx.Request("POST", "https://llm.example/v1/chat/completions")
+    model.replies.append(openai.APIConnectionError(request=request))
+
+    response = client.post("/emails", json={"sender": SENDER, "body": "hola"})
+
+    assert response.status_code == 503
+    assert "not available" in response.json()["error"]["message"]
+    assert client.get("/drafts").json() == []  # nothing half-stored

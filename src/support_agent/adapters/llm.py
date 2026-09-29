@@ -53,13 +53,13 @@ def build_chat_model(settings: Settings) -> BaseChatModel:
 class ScriptedChatModel(BaseChatModel):
     """Plays back scripted replies in order and records every prompt. For tests only.
 
-    Each reply is an AIMessage (plain answer or tool calls) or, for
+    Each reply is an AIMessage (plain answer or tool calls), an exception to raise, or, for
     `with_structured_output`, the Pydantic object the real model would return.
     """
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
-    replies: list[Any]  # AIMessage | BaseModel; Any so Pydantic keeps them as they are
+    replies: list[Any]  # AIMessage | BaseModel | Exception; Any keeps them as they are
     prompts: list[list[BaseMessage]] = Field(default_factory=list)
 
     @property
@@ -70,6 +70,8 @@ class ScriptedChatModel(BaseChatModel):
         if not self.replies:
             raise LLMError("ScriptedChatModel ran out of replies")
         reply = self.replies.pop(0)
+        if isinstance(reply, Exception):  # scripted provider failure
+            raise reply
         if not isinstance(reply, expected):
             raise LLMError(f"expected a scripted {expected.__name__}, got {reply!r}")
         return reply
