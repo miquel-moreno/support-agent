@@ -20,7 +20,16 @@
    724
   ],
   "cost_usd_agent_per_email": 0.00073,
-  "cost_usd_total": 0.0415
+  "cost_usd_total": 0.0415,
+  "manual_recheck": {
+   "reviewer": "Miquel Moreno",
+   "date": "2026-09-29",
+   "cases": {
+    "other-01": true,
+    "return-09": true
+   },
+   "note": "The two drafts the manual review of v1 rejected, after the prompt fix: both would be sent as they are."
+  }
  },
  "cases": [
   {
