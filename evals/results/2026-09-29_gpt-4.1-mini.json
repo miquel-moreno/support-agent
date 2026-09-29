@@ -20,7 +20,21 @@
    755
   ],
   "cost_usd_agent_per_email": 0.00069,
-  "cost_usd_total": 0.0391
+  "cost_usd_total": 0.0391,
+  "manual_review": {
+   "reviewer": "Miquel Moreno",
+   "date": "2026-09-29",
+   "sample": 10,
+   "ready_to_send_human": "7/10",
+   "agrees_with_judge": "9/10",
+   "disagreements": {
+    "other-01": {
+     "judge": true,
+     "human": false
+    }
+   },
+   "note": "other-01: the draft claims the shop sells winter tyres for a Seat Leon; the agent has no product catalogue, so this is invented. Neither the code review nor the judge caught it."
+  }
  },
  "cases": [
   {
