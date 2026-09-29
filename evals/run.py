@@ -274,7 +274,7 @@ async def run(limit: int | None = None, tag: str | None = None) -> dict[str, Any
         json.dumps(report, ensure_ascii=False, indent=1) + "\n", encoding="utf-8", newline="\n"
     )
     (RESULTS / f"{stem}_review.md").write_text(
-        review_sheet(results, f"{report['date']} · {label}") + "\n",
+        review_sheet(results, f"{report['date']} · {label}"),  # already ends with "\n"
         encoding="utf-8",
         newline="\n",
     )
