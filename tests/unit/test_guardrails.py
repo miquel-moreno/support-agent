@@ -58,6 +58,12 @@ def test_no_orders_means_no_order_data_is_allowed() -> None:
     assert len(issues) == 2
 
 
+def test_repeating_a_number_the_customer_wrote_is_not_inventing() -> None:
+    draft = "No hemos encontrado el pedido PED-10999. ¿Es alguno de estos? PED-10023"
+    assert check_draft(draft, [ORDER], quoted_numbers=["PED-10999"]) == []
+    assert check_draft(draft, [ORDER]) != []
+
+
 def test_each_issue_is_reported_once() -> None:
     assert len(check_draft("PED-10999 ... PED-10999", [ORDER])) == 1
 

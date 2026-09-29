@@ -60,10 +60,15 @@ def check_draft(
     orders: Iterable[OrderFacts],
     *,
     extra_dates: Iterable[date] = (),
+    quoted_numbers: Iterable[str] = (),
 ) -> list[str]:
-    """Return one plain-English issue per value in the draft that the data does not back."""
+    """Return one plain-English issue per value in the draft that the data does not back.
+
+    `quoted_numbers` are order numbers the customer wrote: repeating them back ("we
+    could not find PED-10999") is not inventing one.
+    """
     orders = list(orders)
-    numbers = {o["number"] for o in orders}
+    numbers = {o["number"] for o in orders} | set(quoted_numbers)
     tracking = {o["tracking_code"] for o in orders if o["tracking_code"]}
     invoices = {o["invoice_number"] for o in orders}
     dates = set(extra_dates)
