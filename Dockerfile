@@ -26,6 +26,7 @@ WORKDIR /app
 COPY --from=builder --chown=app:app /app/.venv /app/.venv
 COPY --chown=app:app alembic.ini ./
 COPY --chown=app:app migrations ./migrations
+COPY --chown=app:app scripts ./scripts
 
 ENV PATH="/app/.venv/bin:$PATH" \
     PYTHONUNBUFFERED=1
@@ -36,5 +37,6 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"
 
-# Apply pending migrations, then start the API (exec: uvicorn gets the stop signals).
-CMD ["sh", "-c", "alembic upgrade head && exec uvicorn support_agent.main:app --host 0.0.0.0 --port 8000"]
+# Apply pending migrations, load the demo shop on first start, then start the API
+# (exec: uvicorn gets the stop signals).
+CMD ["sh", "-c", "alembic upgrade head && python -m scripts.seed_shop --if-empty && exec uvicorn support_agent.main:app --host 0.0.0.0 --port 8000"]
