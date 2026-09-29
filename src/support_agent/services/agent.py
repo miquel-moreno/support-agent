@@ -30,6 +30,7 @@ from support_agent.services.order_tools import (
     OrderFacts,
     es_date,
     make_order_tools,
+    mentioned_order_numbers,
     parse_es_date,
 )
 from support_agent.services.policy import POLICY_SUMMARY, OrderStatus, check_return
@@ -102,6 +103,11 @@ Rules:
 - Use ONLY the facts given (order, policy decision). Never invent order numbers,
   dates, amounts, tracking codes or invoice numbers; copy them exactly as given.
 - Never promise anything the policy decision does not allow.
+- You know nothing about products, stock, prices, opening hours or delivery times
+  beyond the facts given. For questions about them (category "other"), do not answer
+  them: say that a colleague will reply personally.
+- Return decision "cancel_instead": offer to cancel the order and ask the customer to
+  confirm. Do not say it is being cancelled or refunded yet.
 - situation "ask_order_number": we could not find the order; ask for its number
   (format PED-XXXXX) and say nothing about any order.
 - situation "choose_order": list the candidate orders (number, date, status) and ask
@@ -221,7 +227,9 @@ def build_agent(
         orders = [o for o in [state.get("order")] if o] + state.get("candidates", [])
         deadline = parse_es_date((state.get("policy") or {}).get("deadline"))
         extra = [today] + ([deadline] if deadline else [])
-        return {"issues": check_draft(state["draft"], orders, extra_dates=extra)}
+        quoted = mentioned_order_numbers(f"{state['subject']}\n{state['body']}")
+        issues = check_draft(state["draft"], orders, extra_dates=extra, quoted_numbers=quoted)
+        return {"issues": issues}
 
     def approval(state: AgentState) -> AgentState:
         # Pauses the run here until resumed with Command(resume=ReviewDecision). On resume
