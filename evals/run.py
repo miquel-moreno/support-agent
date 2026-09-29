@@ -192,7 +192,7 @@ def review_sheet(results: list[dict[str, Any]], title: str) -> str:
             "",
             "**Borrador:**",
             "",
-            *[f"> {line}" for line in r["draft"].splitlines()],
+            *[f"> {line}".rstrip() for line in r["draft"].splitlines()],
             "",
             f"**IA:** {verdict} ({problems}) · **Yo:** ___",
             "",
@@ -263,10 +263,12 @@ async def run(limit: int | None = None) -> dict[str, Any]:
         f"_limit{limit}" if limit else ""
     )
     (RESULTS / f"{stem}.json").write_text(
-        json.dumps(report, ensure_ascii=False, indent=1), encoding="utf-8", newline="\n"
+        json.dumps(report, ensure_ascii=False, indent=1) + "\n", encoding="utf-8", newline="\n"
     )
     (RESULTS / f"{stem}_review.md").write_text(
-        review_sheet(results, f"{report['date']} · {label}"), encoding="utf-8", newline="\n"
+        review_sheet(results, f"{report['date']} · {label}") + "\n",
+        encoding="utf-8",
+        newline="\n",
     )
     print(json.dumps(report["summary"], ensure_ascii=False, indent=1))
     return report
