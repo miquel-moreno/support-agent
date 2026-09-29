@@ -211,6 +211,31 @@ async def test_unknown_order_asks_for_the_number(sessions: Any) -> None:
     assert state["issues"] == []  # "PED-XXXXX" is the format example, not an order number
 
 
+async def test_a_number_the_customer_did_not_write_is_not_looked_up(sessions: Any) -> None:
+    # Seen with a real 3B model: no number in the email, so it made one up.
+    customer_id = next(c for c, n in ORDERS_PER_CUSTOMER.items() if n == 1)
+    own = next(o for o in SHOP.orders if o.customer_id == customer_id)
+    invented = next(o for o in SHOP.orders if o.customer_id != customer_id)
+
+    state, _ = await run(
+        sessions,
+        [
+            classify(Category.ORDER_STATUS),
+            call("find_order", order_number=invented.number),
+            call("find_my_orders", n=2),
+            AIMessage("done"),
+            AIMessage(f"Tu pedido {own.number} está {own.status.value}."),
+        ],
+        sender=email_of(own),
+        body="Hice un pedido hace unos días y no me ha llegado.",
+    )
+
+    refusal = next(m for m in state["messages"] if isinstance(m, ToolMessage))
+    assert "did not write" in str(refusal.content)
+    assert state["situation"] == Situation.ORDER_FOUND
+    assert state["order"] is not None and state["order"]["number"] == own.number
+
+
 async def test_other_emails_skip_the_lookup(sessions: Any) -> None:
     state, model = await run(
         sessions,

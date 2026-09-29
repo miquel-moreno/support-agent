@@ -79,7 +79,8 @@ Categories:
 - other: anything else (product questions, complaints without an order, spam...)."""
 
 LOOKUP_PROMPT = """You find the order a customer email is about, using the tools.
-- If the email mentions an order number, call find_order with it.
+- If the email mentions an order number, call find_order with exactly that number.
+  Never make a number up.
 - If it does not, or find_order finds nothing, call find_my_orders.
 - Only call tools. When you have looked up what you need, answer with the word: done."""
 

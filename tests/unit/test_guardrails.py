@@ -27,7 +27,8 @@ def test_a_draft_that_only_uses_real_data_passes() -> None:
     draft = (
         "Tu pedido PED-10023 (factura F-2026-05023) se entregó el 04/09/2026 con SEUR, "
         "seguimiento SEU123456789. Total: 1.234,50 €; el kit fueron 3 x 345,50 € = 1036,50 €. "
-        "Puedes devolverlo hasta el 04/10/2026. La lámpara costó 198 euros."
+        "Puedes devolverlo hasta el 04/10/2026 (4 de octubre de 2026). La lámpara costó "
+        "198 euros. Lo pediste el 1 de septiembre."
     )
     assert check_draft(draft, [ORDER], extra_dates=[date(2026, 10, 4)]) == []
 
@@ -42,6 +43,9 @@ def test_a_draft_that_only_uses_real_data_passes() -> None:
         ("Te devolvemos 50,00 €.", "amount 50,00 €"),
         ("Te devolvemos 1.500 euros.", "amount 1.500 euros"),
         ("Fecha rara: 31/02/2026.", "date 31/02/2026"),
+        ("Llegará el 30 de septiembre de 2026.", "date 30 de septiembre de 2026"),
+        ("Llegará el 30 de Septiembre.", "date 30 de Septiembre"),
+        ("Se entregó el 4 de septiembre del 2025.", "date 4 de septiembre del 2025"),
     ],
 )
 def test_invented_values_are_reported(draft: str, issue: str) -> None:

@@ -75,6 +75,10 @@ def normalize_order_number(text: str) -> str | None:
     return f"PED-{match.group(1)}" if match else None
 
 
+def mentioned_order_numbers(text: str) -> set[str]:
+    return {f"PED-{m.group(1)}" for m in ORDER_NUMBER.finditer(text)}
+
+
 def order_facts(order: OrderRecord) -> OrderFacts:
     status = OrderStatus(order.status)
     return OrderFacts(
@@ -102,13 +106,22 @@ def order_facts(order: OrderRecord) -> OrderFacts:
 def make_order_tools(sessions: async_sessionmaker[AsyncSession]) -> list[BaseTool]:
     @tool(response_format="content_and_artifact")
     async def find_order(
-        order_number: str, sender: Annotated[str, InjectedState("sender")]
+        order_number: str,
+        sender: Annotated[str, InjectedState("sender")],
+        subject: Annotated[str, InjectedState("subject")],
+        body: Annotated[str, InjectedState("body")],
     ) -> tuple[str, LookupResult]:
-        """Look up one order by the number the customer wrote (for example PED-10023)."""
+        """Look up one order by the order number written in the customer's email."""
         number = normalize_order_number(order_number)
         if number is None:
             return (
                 f"{order_number!r} is not a valid order number (format PED-XXXXX).",
+                LookupResult(orders=[], hidden=[]),
+            )
+        if number not in mentioned_order_numbers(f"{subject}\n{body}"):
+            # Small models sometimes make a number up: only look up what the customer wrote.
+            return (
+                f"The customer did not write {number} in the email. Use find_my_orders.",
                 LookupResult(orders=[], hidden=[]),
             )
         async with sessions() as session:

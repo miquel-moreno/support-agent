@@ -17,6 +17,24 @@ ORDER_NUMBERS = re.compile(r"\bPED-?\s?\d{5}\b", re.IGNORECASE)
 TRACKING_CODES = re.compile(r"\b[A-Z]{3}\d{9}\b")
 INVOICE_NUMBERS = re.compile(r"\bF-\d{4}-\d{5}\b")
 DATES = re.compile(r"\b(\d{1,2})/(\d{1,2})/(\d{4})\b")
+MONTHS = [
+    "enero",
+    "febrero",
+    "marzo",
+    "abril",
+    "mayo",
+    "junio",
+    "julio",
+    "agosto",
+    "septiembre",
+    "octubre",
+    "noviembre",
+    "diciembre",
+]
+# "11 de octubre de 2026", or "11 de octubre" (then any year is accepted)
+WORD_DATES = re.compile(
+    rf"\b(\d{{1,2}}) de ({'|'.join(MONTHS)})(?: de(?:l)? (\d{{4}}))?", re.IGNORECASE
+)
 AMOUNTS = re.compile(r"(\d{1,3}(?:\.\d{3})+|\d+)(?:,(\d{2}))?\s?(?:€|euros?\b)", re.IGNORECASE)
 
 
@@ -76,6 +94,13 @@ def check_draft(
             issues.append(f"invoice {invoice} does not match the order")
     for match in DATES.finditer(draft):
         if _date(*match.groups()) not in dates:
+            issues.append(f"date {match.group()} does not come from the order or the policy")
+    for match in WORD_DATES.finditer(draft):
+        day, month, year = int(match[1]), MONTHS.index(match[2].lower()) + 1, match[3]
+        if not any(
+            (d.day, d.month) == (day, month) and (year is None or d.year == int(year))
+            for d in dates
+        ):
             issues.append(f"date {match.group()} does not come from the order or the policy")
     for match in AMOUNTS.finditer(draft):
         if _money(match.group()) not in amounts:
