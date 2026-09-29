@@ -134,3 +134,25 @@ def test_a_missing_llm_key_is_a_clear_503(database_url: str, monkeypatch: Any) -
     with TestClient(create_app()) as client:
         response = client.post("/emails", json={"sender": "a@example.com", "body": "hola"})
     assert response.status_code == 503
+
+
+def test_the_trace_explains_the_draft_and_the_decision(api: Any) -> None:
+    client, _ = api
+    draft_id = submit(api)["id"]
+
+    before = client.get(f"/drafts/{draft_id}/trace").json()
+    client.post(f"/drafts/{draft_id}/approve")
+    after = client.get(f"/drafts/{draft_id}/trace").json()
+
+    nodes = [s["name"] for s in before["steps"] if s["kind"] == "node"]
+    assert nodes[0] == "classify" and nodes[-1] == "approval"
+    assert before["totals"]["tool_calls"] == 1
+    assert before["totals"]["llm_calls"] == 3  # lookup twice + draft (scripted: no tokens)
+    later = [s["name"] for s in after["steps"][len(before["steps"]) :] if s["kind"] == "node"]
+    assert later == ["approval", "send"]  # the resumed run, appended in order
+    assert [s["seq"] for s in after["steps"]] == list(range(1, len(after["steps"]) + 1))
+
+
+def test_trace_of_an_unknown_draft_is_404(api: Any) -> None:
+    client, _ = api
+    assert client.get("/drafts/nope/trace").status_code == 404

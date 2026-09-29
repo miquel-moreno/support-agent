@@ -66,8 +66,15 @@ classify ─┬─ other ──────────────────�
 | `GET /drafts/{id}` | Un borrador con el email, el pedido, los avisos (`issues`) y la decisión |
 | `POST /drafts/{id}/approve` | Envía el borrador tal cual, o `{text}` si la persona lo ha corregido (`edited: true`) |
 | `POST /drafts/{id}/reject` | `{reason}`: no se envía nada |
+| `GET /drafts/{id}/trace` | Qué hizo el agente paso a paso (ver abajo) |
 
 El id del borrador es el `thread_id` de LangGraph: el checkpointer (PostgreSQL) guarda la ejecución pausada y la reanuda con `Command(resume=decisión)`, aunque el servidor se haya reiniciado entre medias (comprobado con `docker compose restart api`). Decidir dos veces sobre el mismo borrador devuelve 409.
+
+### Trazas
+
+Un callback de LangChain (`services/tracing.py`) escucha la ejecución y guarda en `trace_steps`, en orden, cada nodo (su salida), cada llamada al LLM (mensajes, respuesta, modelo, tokens y latencia) y cada llamada a una herramienta (argumentos y resultado). Los textos se recortan a 4.000 caracteres. La ejecución que redacta y la que se reanuda tras la decisión quedan en la misma traza. `GET /drafts/{id}/trace` devuelve los pasos y los totales.
+
+Ejemplo real (29/09/2026, `qwen2.5:3b` en Ollama, "¿dónde está mi pedido?" sin número): 5 llamadas al LLM, 2 herramientas, 2.650 tokens de entrada y 266 de salida, 55 s. La traza enseñó que el modelo llamó a `find_order("HOLA")`, la herramienta lo rechazó por formato y el modelo pasó a `find_my_orders`. Con los precios de `gpt-4.1-mini` (0,40 $ / 1,60 $ por millón de tokens de entrada / salida), ese volumen serían unos 0,0015 $ por email: estimación, porque cada modelo cuenta los tokens de forma distinta.
 
 Probarlo con un email (tienda en SQLite en memoria, LLM del `.env`):
 
@@ -88,6 +95,7 @@ uv run python -m scripts.try_agent --order PED-10001 "Quiero devolver el pedido 
 | `find_order` solo busca números escritos en el email | En una prueba real, `qwen2.5:3b` se inventó un número cuando el email no traía ninguno. Se impide con código, no con el prompt |
 | `interrupt()` + checkpointer de PostgreSQL para la aprobación | La pausa forma parte del grafo, no de la API: nada puede enviarse sin pasar por el nodo `approval`. El checkpointer oficial (`langgraph-checkpoint-postgres`) usa la misma base de datos; con SQLite (tests) se usa uno en memoria |
 | Tabla `drafts` además del checkpointer | El checkpointer guarda la ejecución, pero no se puede consultar como una bandeja. La tabla es lo que ve la persona (pendientes, decisión, si se corrigió) y de ahí sale la métrica "aprobados sin cambios" |
+| Trazas propias en PostgreSQL en vez de Langfuse | Langfuse v3 autoalojado necesita ClickHouse, Redis y almacenamiento de objetos: demasiado para una demo. Un callback de LangChain y una tabla dan lo necesario (qué hizo el agente, tokens, tiempos) en la misma base de datos. Con volumen real, un callback de Langfuse u OpenTelemetry se enchufa en el mismo sitio |
 | El nodo `approval` no tiene efectos secundarios | Al reanudar, LangGraph vuelve a ejecutar el nodo desde el principio; por eso el "envío" es un nodo aparte (`send`) |
 | Revisión del borrador con código y una reescritura | Si el borrador trae un dato que no está en los hechos, el modelo lo reescribe una vez; si persiste, el aviso queda para la persona que aprueba |
 
@@ -101,3 +109,4 @@ _Pendiente._ Resultados en `evals/results/`, con fecha y modelo.
 - Con un modelo local pequeño (`qwen2.5:3b`) los datos son correctos pero la redacción es torpe y cada email tarda ~1 minuto en CPU. En una prueba real escribió "no puedo procesar tu devolución" en un caso en que la política la permitía: la persona lo corrigió antes de enviar.
 - `POST /emails` espera a que el agente termine (síncrono). Para mucho volumen habría que pasarlo a una cola con un worker, como en `doc-extractor-api`.
 - El checkpointer de PostgreSQL se ha probado a mano en Docker, no en la CI (los tests usan el de memoria). La librería usa psycopg asíncrono, que no funciona en el bucle de eventos por defecto de Windows: en Windows, la API con PostgreSQL se ejecuta con Docker.
+- Si el agente falla antes de dejar el borrador pendiente (por ejemplo, el LLM no responde), la petición devuelve error y esa traza no se guarda: se guarda junto con el borrador.
