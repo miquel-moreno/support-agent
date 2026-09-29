@@ -37,6 +37,7 @@ class DraftOut(BaseModel):
     category: str
     situation: str | None
     order_number: str | None
+    return_decision: str | None = Field(description="Return policy decision, if any")
     draft: str
     issues: list[str] = Field(description="Data in the draft that the order does not back")
     final_text: str | None

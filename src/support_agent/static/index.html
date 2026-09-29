@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Asistente de atención al cliente · demo</title>
+<style>
+  :root {
+    --bg: #f5f7fb; --card: #ffffff; --text: #1f2933; --muted: #616e7c; --line: #e4e7eb;
+    --accent: #2563eb; --ok: #15803d; --ok-bg: #dcfce7; --wait: #92400e; --wait-bg: #fef3c7;
+    --no: #b91c1c; --no-bg: #fee2e2;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 15px/1.5 "Segoe UI", system-ui, sans-serif; background: var(--bg); color: var(--text); }
+  main { max-width: 860px; margin: 0 auto; padding: 24px 16px 36px; }
+  h1 { font-size: 23px; margin: 0 0 4px; }
+  h2 { font-size: 13px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; margin: 0 0 10px; }
+  .sub { color: var(--muted); margin: 0 0 18px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px 18px; margin-bottom: 14px; }
+  label { display: block; font-size: 12px; color: var(--muted); margin: 8px 0 3px; }
+  input, textarea { width: 100%; border: 1px solid #c3cad5; border-radius: 8px; padding: 8px 10px; font: inherit; background: #fff; }
+  textarea { resize: vertical; }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  @media (max-width: 640px) { .row { grid-template-columns: 1fr; } }
+  .examples { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 4px; }
+  .chip { border: 1px solid var(--line); background: #f8fafc; border-radius: 999px; padding: 4px 12px; font: inherit; font-size: 13px; cursor: pointer; }
+  .chip:hover { border-color: var(--accent); color: var(--accent); }
+  .btn { border: 0; border-radius: 8px; padding: 9px 16px; font: inherit; font-weight: 600; cursor: pointer; color: #fff; background: var(--accent); }
+  .btn.approve { background: var(--ok); }
+  .btn.reject { background: #fff; color: var(--no); border: 1px solid var(--no); }
+  .btn:disabled { opacity: .55; cursor: default; }
+  .actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 12px; }
+  .status { display: inline-block; font-weight: 700; border-radius: 999px; padding: 3px 12px; font-size: 14px; }
+  .status.pending { background: var(--wait-bg); color: var(--wait); }
+  .status.sent { background: var(--ok-bg); color: var(--ok); }
+  .status.rejected { background: var(--no-bg); color: var(--no); }
+  .facts { display: flex; flex-wrap: wrap; gap: 6px 18px; margin: 10px 0 4px; font-size: 14px; }
+  .facts b { font-weight: 600; }
+  .issues { color: var(--no); font-size: 14px; margin: 6px 0 0; }
+  .meta { color: var(--muted); font-size: 13px; }
+  .error { color: var(--no); font-weight: 600; }
+  .hidden { display: none; }
+  footer { color: var(--muted); font-size: 13px; text-align: center; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Asistente que responde emails de clientes</h1>
+  <p class="sub">La IA lee el email, consulta el pedido y redacta la respuesta. <b>Una persona la aprueba antes de enviarla.</b> Tienda y datos inventados.</p>
+
+  <section class="card">
+    <h2>1 · Llega un email</h2>
+    <div class="examples" id="examples"></div>
+    <div class="row">
+      <div><label for="sender">De</label><input id="sender" type="email" maxlength="200"></div>
+      <div><label for="subject">Asunto</label><input id="subject" type="text" maxlength="300"></div>
+    </div>
+    <label for="body">Mensaje</label>
+    <textarea id="body" rows="3" maxlength="10000"></textarea>
+    <div class="actions">
+      <button class="btn" id="send">Recibir email</button>
+      <span class="meta" id="sending"></span>
+    </div>
+    <p class="error hidden" id="error"></p>
+  </section>
+
+  <section class="card hidden" id="result">
+    <h2>2 · Borrador de la IA · revisión humana</h2>
+    <span class="status" id="status"></span>
+    <div class="facts">
+      <span>Tipo: <b id="category"></b></span>
+      <span>Pedido: <b id="order"></b></span>
+      <span>Política: <b id="decision"></b></span>
+    </div>
+    <p class="issues hidden" id="issues"></p>
+    <label for="draft">Respuesta (puedes corregirla antes de aprobar)</label>
+    <textarea id="draft" rows="8"></textarea>
+    <div class="actions" id="decide">
+      <button class="btn approve" id="approve">Aprobar y enviar</button>
+      <button class="btn reject" id="reject">Rechazar</button>
+      <span class="meta" id="elapsed"></span>
+    </div>
+    <p class="meta" id="outcome"></p>
+  </section>
+
+  <footer>Demo de <a href="https://github.com/miquel-moreno/support-agent">support-agent</a> · el envío es simulado · <a href="/docs">API</a></footer>
+</main>
+
+<script>
+const EXAMPLES = __EXAMPLES__;
+const CATEGORY = {
+  order_status: "Estado del pedido", return_request: "Devolución",
+  invoice_problem: "Factura", other: "Otra consulta",
+};
+const SITUATION = {
+  choose_order: "varios: pregunta cuál", ask_order_number: "no encontrado: pide el número",
+  foreign_order: "de otro cliente: no se revela", no_order_needed: "no hace falta",
+};
+const DECISION = {
+  allowed: "devolución permitida", window_expired: "fuera de plazo",
+  cancel_instead: "se puede cancelar", wait_for_delivery: "esperar a la entrega",
+  not_applicable: "no aplica",
+};
+const STATUS = { pending: "Pendiente de aprobar", sent: "Enviado (simulado)", rejected: "Rechazado" };
+const $ = (id) => document.getElementById(id);
+let current = null;
+
+for (const example of EXAMPLES) {
+  const chip = document.createElement("button");
+  chip.className = "chip";
+  chip.textContent = example.label;
+  chip.onclick = () => {
+    $("sender").value = example.sender;
+    $("subject").value = example.subject;
+    $("body").value = example.body;
+  };
+  $("examples").appendChild(chip);
+}
+
+function show(draft) {
+  current = draft;
+  $("result").classList.remove("hidden");
+  $("status").textContent = STATUS[draft.status];
+  $("status").className = "status " + draft.status;
+  $("category").textContent = CATEGORY[draft.category] || draft.category;
+  $("order").textContent = draft.order_number || SITUATION[draft.situation] || "—";
+  $("decision").textContent = DECISION[draft.return_decision] || "—";
+  $("issues").textContent = draft.issues.length ? "⚠ Revisar: " + draft.issues.join("; ") : "";
+  $("issues").classList.toggle("hidden", !draft.issues.length);
+  $("draft").value = draft.final_text || draft.draft;
+  const pending = draft.status === "pending";
+  $("draft").readOnly = !pending;
+  $("approve").disabled = $("reject").disabled = !pending;
+  $("outcome").textContent = draft.status === "sent"
+    ? (draft.edited ? "Enviado con las correcciones de la persona." : "Enviado tal como lo escribió la IA.")
+    : draft.status === "rejected" ? "No se ha enviado nada." : "";
+}
+
+async function call(url, body) {
+  const response = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  const data = await response.json();
+  if (!response.ok) throw new Error((data.error && data.error.message) || "Error " + response.status);
+  return data;
+}
+
+$("send").onclick = async () => {
+  $("error").classList.add("hidden");
+  $("send").disabled = true;
+  const start = performance.now();
+  $("sending").textContent = "La IA está leyendo el email…";
+  try {
+    const draft = await call("/emails", {
+      sender: $("sender").value, subject: $("subject").value, body: $("body").value,
+    });
+    show(draft);
+    $("elapsed").textContent = "Borrador en " + ((performance.now() - start) / 1000).toFixed(1) + " s";
+  } catch (error) {
+    $("error").textContent = error.message;
+    $("error").classList.remove("hidden");
+  } finally {
+    $("send").disabled = false;
+    $("sending").textContent = "";
+  }
+};
+
+$("approve").onclick = async () => {
+  const text = $("draft").value;
+  show(await call(`/drafts/${current.id}/approve`, text.trim() === current.draft.trim() ? undefined : { text }));
+};
+
+$("reject").onclick = async () => {
+  show(await call(`/drafts/${current.id}/reject`, { reason: "Rechazado en la demo" }));
+};
+</script>
+</body>
+</html>

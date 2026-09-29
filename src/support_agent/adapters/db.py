@@ -145,6 +145,7 @@ class DraftRecord(Base):
     category: Mapped[str] = mapped_column(String(30))
     situation: Mapped[str | None] = mapped_column(String(30))
     order_number: Mapped[str | None] = mapped_column(String(20))
+    return_decision: Mapped[str | None] = mapped_column(String(30))  # from the policy, in code
     draft: Mapped[str] = mapped_column(Text)
     issues: Mapped[list[str]] = mapped_column(JSON)
     final_text: Mapped[str | None] = mapped_column(Text)
